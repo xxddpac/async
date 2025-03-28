@@ -1,0 +1,72 @@
+package async
+
+import (
+	"runtime/debug"
+)
+
+type Status int
+
+const (
+	Idle Status = iota + 1
+	Busy
+	Closed
+)
+
+type worker struct {
+	id         int
+	jobChannel chan Job
+	quit       chan struct{}
+	status     Status
+	pool       *WorkerPool
+}
+
+func NewWorker(id int, pool *WorkerPool) *worker {
+	return &worker{
+		id:         id,
+		jobChannel: make(chan Job),
+		quit:       make(chan struct{}),
+		status:     Idle,
+		pool:       pool,
+	}
+}
+
+func (w *worker) Run(wq chan<- chan Job) {
+	w.pool.Logger.Printf("【worker-%d】run worker...", w.id)
+	go func() {
+		defer func() {
+			panicErr := recover()
+			if panicErr != nil {
+				debug.PrintStack()
+				w.pool.Logger.Printf("【worker-%d】run panic, err info: %v", w.id, panicErr)
+				w.pool.Logger.Printf("【worker-%d】panic error stack ==> %s", w.id, debug.Stack())
+				w.pool.Logger.Printf("【worker-%d】 recover worker...", w.id)
+				w.Run(wq)
+			}
+		}()
+		for {
+			wq <- w.jobChannel // register job channel
+			w.status = Idle
+			select {
+			case job := <-w.jobChannel: // get job
+				w.status = Busy
+				if err := job(); err != nil {
+					w.pool.Logger.Printf("【worker-%d】job error: %v", w.id, err)
+				}
+			case <-w.quit:
+				w.status = Closed
+				w.pool.Logger.Printf("【worker-%d】worker closed", w.id)
+				return
+			}
+		}
+	}()
+}
+
+func (w *worker) Status() Status {
+	return w.status
+}
+
+func (w *worker) Close() {
+	go func() {
+		w.quit <- struct{}{}
+	}()
+}
