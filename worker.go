@@ -14,7 +14,7 @@ const (
 
 type worker struct {
 	id         int
-	jobChannel chan JobWithArgs
+	jobChannel chan *JobWithArgs
 	quit       chan struct{}
 	status     Status
 	pool       *WorkerPool
@@ -23,15 +23,14 @@ type worker struct {
 func NewWorker(id int, pool *WorkerPool) *worker {
 	return &worker{
 		id:         id,
-		jobChannel: make(chan JobWithArgs),
+		jobChannel: make(chan *JobWithArgs),
 		quit:       make(chan struct{}),
 		status:     Idle,
 		pool:       pool,
 	}
 }
 
-func (w *worker) Run(wq chan<- chan JobWithArgs) {
-	w.pool.Logger.Printf("【worker-%d】run worker...", w.id)
+func (w *worker) Run(wq chan<- chan *JobWithArgs) {
 	go func() {
 		defer func() {
 			panicErr := recover()
@@ -49,12 +48,13 @@ func (w *worker) Run(wq chan<- chan JobWithArgs) {
 			select {
 			case job := <-w.jobChannel: // get job
 				w.status = Busy
-				if err := job.Fn(job.Arg...); err != nil {
+				if err := job.fn(job.args...); err != nil {
 					w.pool.Logger.Printf("【worker-%d】job error: %v", w.id, err)
 				}
+				w.pool.sp.Put(job) // recycle job
 			case <-w.quit:
 				w.status = Closed
-				w.pool.Logger.Printf("【worker-%d】worker closed", w.id)
+				//w.pool.Logger.Printf("【worker-%d】worker closed", w.id)
 				return
 			}
 		}

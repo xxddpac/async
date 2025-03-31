@@ -4,13 +4,13 @@ type Option func(*WorkerPool)
 
 func WithMaxWorkers(count int) Option {
 	return func(c *WorkerPool) {
-		c.MaxWorkers = count
+		c.maxWorkers = count
 	}
 }
 
 func WithMaxQueue(count int) Option {
 	return func(c *WorkerPool) {
-		c.MaxQueue = count
+		c.maxQueue = count
 	}
 }
 

@@ -1,49 +1,88 @@
 package async
 
 import (
-	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
-func TestNewWorkerDefault(t *testing.T) {
+func BenchmarkThroughput1ms(b *testing.B) {
 	pool := NewPoolWithFunc()
-	for i := 0; i < 100; i++ {
-		pool.Add(func(args ...interface{}) error {
-			fmt.Println("do")
-			return nil
-		})
+	defer pool.Close()
+
+	var executed int64
+	task := func(args ...interface{}) error {
+		atomic.AddInt64(&executed, 1)
+		time.Sleep(1 * time.Millisecond)
+		return nil
 	}
-	select {
-	case <-time.After(time.Second):
+
+	b.ResetTimer()
+	start := time.Now()
+	var wg sync.WaitGroup
+	for i := 0; i < b.N; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			pool.Add(task, i)
+		}(i)
 	}
-	pool.Close()
+	wg.Wait()
+	elapsed := time.Since(start)
+	b.StopTimer()
+	b.ReportMetric(float64(executed)/elapsed.Seconds(), "tasks/s")
 }
 
-type Log struct {
-}
+func BenchmarkHighConcurrency(b *testing.B) {
+	pool := NewPoolWithFunc()
+	defer pool.Close()
 
-func (l Log) Printf(format string, v ...interface{}) {
-}
+	var executed int64
+	task := func(args ...interface{}) error {
+		atomic.AddInt64(&executed, 1)
+		time.Sleep(1 * time.Millisecond)
+		return nil
+	}
 
-func TestNewWorkerWithOptions(t *testing.T) {
-	pool := NewPoolWithFunc(WithMaxWorkers(200), WithMaxQueue(200), WithLogger(Log{}))
-	for i := 0; i < 100; i++ {
-		pool.Add(func(args ...interface{}) error {
-			var id int
-			if len(args) > 0 {
-				id = args[0].(int)
+	concurrency := 100
+	tasksPerGoroutine := b.N / concurrency
+
+	b.ResetTimer()
+	var wg sync.WaitGroup
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func(start int) {
+			defer wg.Done()
+			for j := 0; j < tasksPerGoroutine; j++ {
+				pool.Add(task, start+j)
 			}
-			fmt.Println("do", id)
-			return nil
-		}, 100)
+		}(i * tasksPerGoroutine)
 	}
-	fmt.Println(pool.WorkerCount())
-	for _, wk := range pool.workers {
-		fmt.Println(wk.id, wk.status)
+	wg.Wait()
+	b.StopTimer()
+
+	b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "tasks/s")
+}
+
+func BenchmarkMemoryUsage(b *testing.B) {
+	pool := NewPoolWithFunc()
+	defer pool.Close()
+
+	task := func(args ...interface{}) error {
+		time.Sleep(1 * time.Millisecond)
+		return nil
 	}
-	select {
-	case <-time.After(time.Second):
+
+	b.ResetTimer()
+	var wg sync.WaitGroup
+	for i := 0; i < b.N; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			pool.Add(task, i)
+		}(i)
 	}
-	pool.Close()
+	wg.Wait()
+	b.StopTimer()
 }

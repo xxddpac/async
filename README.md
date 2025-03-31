@@ -5,22 +5,26 @@
 ```
 import "github.com/xxddpac/async"
 
-// create a pool with default(100) workers
-pool := NewPoolWithFunc()
+var (
+	wg   = &sync.WaitGroup{}
+	pool = NewPoolWithFunc() // create a new pool with default(100) workers
+)
 
-//dispatch tasks
-for i := 0; i < 100; i++ {
-	pool.Add(func(args ...interface{}) error {
-		fmt.Println("do")
-		return nil
-	    })
-    }
-    
-// block until you are ready to shut down
-select {
-case <-time.After(time.Second):
+// close the pool when you don't need it anymore
+defer pool.Close()
+
+// diaptch tasks to the pool
+for i := 0; i < 1000; i++ {
+	wg.Add(1)
+	go func(wg *sync.WaitGroup) {
+		defer wg.Add(-1)
+		pool.Add(func(args ...interface{}) error {
+			time.Sleep(time.Millisecond * 100)
+			return nil
+		})
+	}(wg)
 }
 
-// close pool
-pool.Close()
+// wait for all tasks to finish
+wg.Wait()
 ```

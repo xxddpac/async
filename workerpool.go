@@ -1,10 +1,14 @@
 package async
 
+import (
+	"sync"
+)
+
 type Job func(args ...interface{}) error
 
 type JobWithArgs struct {
-	Fn  Job
-	Arg []interface{}
+	fn   Job
+	args []interface{}
 }
 
 var (
@@ -13,34 +17,36 @@ var (
 )
 
 type WorkerPool struct {
-	MaxWorkers  int
-	MaxQueue    int
+	maxWorkers  int
+	maxQueue    int
 	workers     []*worker
-	jobQueue    chan JobWithArgs
-	workerQueue chan chan JobWithArgs
+	jobQueue    chan *JobWithArgs
+	workerQueue chan chan *JobWithArgs
 	quit        chan struct{}
 	Logger      Logger
+	sp          sync.Pool
 }
 
 func NewPoolWithFunc(opts ...Option) *WorkerPool {
 	wp := &WorkerPool{
-		MaxWorkers: maxWorkers,
-		MaxQueue:   maxQueue,
+		maxWorkers: maxWorkers,
+		maxQueue:   maxQueue,
 		Logger:     Printf,
 	}
 	for _, opt := range opts {
 		opt(wp)
 	}
-	wp.jobQueue = make(chan JobWithArgs, wp.MaxQueue)
-	wp.workerQueue = make(chan chan JobWithArgs, wp.MaxWorkers)
+	wp.jobQueue = make(chan *JobWithArgs, wp.maxQueue)
+	wp.workerQueue = make(chan chan *JobWithArgs, wp.maxWorkers)
 	wp.quit = make(chan struct{})
+	wp.sp.New = func() interface{} { return &JobWithArgs{} }
 	wp.Run()
 	return wp
 }
 
 func (w *WorkerPool) Run() *WorkerPool {
-	w.Logger.Printf("WorkerPool init... maxWorkers: %d, maxQueue: %d", w.MaxWorkers, w.MaxQueue)
-	for i := 0; i < w.MaxWorkers; i++ {
+	w.Logger.Printf("WorkerPool init... maxWorkers: %d, maxQueue: %d", w.maxWorkers, w.maxQueue)
+	for i := 0; i < w.maxWorkers; i++ {
 		nw := NewWorker(i, w)
 		nw.Run(w.workerQueue)
 		w.workers = append(w.workers, nw)
@@ -52,7 +58,7 @@ func (w *WorkerPool) Run() *WorkerPool {
 				wq := <-w.workerQueue // get worker
 				wq <- job             // send job to worker
 			case <-w.quit:
-				w.Logger.Printf("WorkerPool quited")
+				//w.Logger.Printf("WorkerPool quited")
 				for _, wk := range w.workers {
 					wk.Close()
 				}
@@ -64,11 +70,14 @@ func (w *WorkerPool) Run() *WorkerPool {
 }
 
 func (w *WorkerPool) WorkerCount() int {
-	return w.MaxWorkers
+	return w.maxWorkers
 }
 
 func (w *WorkerPool) Add(fn Job, args ...interface{}) {
-	w.jobQueue <- JobWithArgs{Fn: fn, Arg: args}
+	job := w.sp.Get().(*JobWithArgs) // get job from sync.Pool
+	job.fn = fn
+	job.args = args
+	w.jobQueue <- job
 }
 
 func (w *WorkerPool) Close() {
