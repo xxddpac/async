@@ -1,6 +1,11 @@
 package async
 
-type Job func() error
+type Job func(args ...interface{}) error
+
+type JobWithArgs struct {
+	Fn  Job
+	Arg []interface{}
+}
 
 var (
 	maxWorkers = 100
@@ -11,8 +16,8 @@ type WorkerPool struct {
 	MaxWorkers  int
 	MaxQueue    int
 	workers     []*worker
-	jobQueue    chan Job
-	workerQueue chan chan Job
+	jobQueue    chan JobWithArgs
+	workerQueue chan chan JobWithArgs
 	quit        chan struct{}
 	Logger      Logger
 }
@@ -26,8 +31,8 @@ func NewPoolWithFunc(opts ...Option) *WorkerPool {
 	for _, opt := range opts {
 		opt(wp)
 	}
-	wp.jobQueue = make(chan Job, wp.MaxQueue)
-	wp.workerQueue = make(chan chan Job, wp.MaxWorkers)
+	wp.jobQueue = make(chan JobWithArgs, wp.MaxQueue)
+	wp.workerQueue = make(chan chan JobWithArgs, wp.MaxWorkers)
 	wp.quit = make(chan struct{})
 	wp.Run()
 	return wp
@@ -62,8 +67,8 @@ func (w *WorkerPool) WorkerCount() int {
 	return w.MaxWorkers
 }
 
-func (w *WorkerPool) Add(job Job) {
-	w.jobQueue <- job
+func (w *WorkerPool) Add(fn Job, args ...interface{}) {
+	w.jobQueue <- JobWithArgs{Fn: fn, Arg: args}
 }
 
 func (w *WorkerPool) Close() {
