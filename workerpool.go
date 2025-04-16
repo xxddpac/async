@@ -23,7 +23,7 @@ type WorkerPool struct {
 	jobQueue    chan *JobWithArgs
 	workerQueue chan chan *JobWithArgs
 	quit        chan struct{}
-	logger      Logger
+	Logger      Logger
 	onError     func(err error)
 	sp          sync.Pool
 	Wg          sync.WaitGroup
@@ -33,11 +33,11 @@ func New(opts ...Option) *WorkerPool {
 	wp := &WorkerPool{
 		maxWorkers: maxWorkers,
 		maxQueue:   maxQueue,
+		Logger:     Printf,
 	}
 	for _, opt := range opts {
 		opt(wp)
 	}
-	wp.logger = Printf
 	wp.jobQueue = make(chan *JobWithArgs, wp.maxQueue)
 	wp.workerQueue = make(chan chan *JobWithArgs, wp.maxWorkers)
 	wp.quit = make(chan struct{})
@@ -47,7 +47,7 @@ func New(opts ...Option) *WorkerPool {
 }
 
 func (w *WorkerPool) Run() *WorkerPool {
-	w.logger.Printf("WorkerPool init... maxWorkers: %d, maxQueue: %d", w.maxWorkers, w.maxQueue)
+	w.Logger.Printf("WorkerPool init... maxWorkers: %d, maxQueue: %d", w.maxWorkers, w.maxQueue)
 	for i := 0; i < w.maxWorkers; i++ {
 		nw := NewWorker(i, w)
 		nw.Run(w.workerQueue)
@@ -60,7 +60,7 @@ func (w *WorkerPool) Run() *WorkerPool {
 				wq := <-w.workerQueue
 				wq <- job
 			case <-w.quit:
-				w.logger.Printf("WorkerPool close...")
+				w.Logger.Printf("WorkerPool close...")
 				for _, wk := range w.workers {
 					wk.Close()
 				}

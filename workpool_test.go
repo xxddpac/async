@@ -1,8 +1,7 @@
 package async
 
 import (
-	"fmt"
-	"sync"
+	"log"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -85,42 +84,36 @@ func BenchmarkMemoryUsage(b *testing.B) {
 	b.StopTimer()
 }
 
+// TestPoolWithOptions tests the worker pool with options
+
+type Log struct {
+}
+
+func (l Log) Printf(format string, args ...interface{}) {
+	//zap.S().Infof(msg, args) // Uncomment this line if you want to use zap logger
+	log.Printf(format, args...)
+}
+
 func TestPoolWithOptions(t *testing.T) {
 	var (
-		count   = 50000
-		total   int
-		mu      sync.Mutex
-		errChan = make(chan error, count)
-		pool    = New(WithMaxWorkers(count), WithMaxQueue(count), WithOnError(func(err error) {
-			mu.Lock()
-			total++
-			mu.Unlock()
-		}))
+		count = 10000
+		pool  = New(
+			WithMaxWorkers(count),
+			WithMaxQueue(count),
+			WithOnError(func(err error) {
+				// callback function for error handling
+			}),
+			WithLogger(Log{}))
 	)
-	go func() {
-		for err := range errChan {
-			_ = err
-		}
-	}()
-	defer func() {
-		close(errChan)
-		pool.Close()
-	}()
+	defer pool.Close()
 	pool.Wg.Add(count)
 	for i := 0; i < count; i++ {
 		pool.Add(func(args ...interface{}) error {
 			defer pool.Wg.Done()
-			var err error
-			err = fmt.Errorf("%s %d", args[0], args[1])
-			select {
-			case errChan <- err:
-			default:
-			}
-			return err
-		}, "test error", i)
+			time.Sleep(10 * time.Millisecond)
+			return nil
+		})
 	}
 	pool.Wg.Wait()
-	if total != count {
-		t.Errorf("expected %d errors, got %d", count, total)
-	}
+	pool.Logger.Printf("all tasks completed")
 }

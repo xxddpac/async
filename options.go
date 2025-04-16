@@ -19,3 +19,9 @@ func WithOnError(fn func(err error)) Option {
 		c.onError = fn
 	}
 }
+
+func WithLogger(logger Logger) Option {
+	return func(c *WorkerPool) {
+		c.Logger = logger
+	}
+}

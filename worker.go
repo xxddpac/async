@@ -36,9 +36,9 @@ func (w *worker) Run(wq chan<- chan *JobWithArgs) {
 			panicErr := recover()
 			if panicErr != nil {
 				debug.PrintStack()
-				w.pool.logger.Printf("【worker-%d】run panic, err info: %v", w.id, panicErr)
-				w.pool.logger.Printf("【worker-%d】panic error stack ==> %s", w.id, debug.Stack())
-				w.pool.logger.Printf("【worker-%d】 recover worker...", w.id)
+				w.pool.Logger.Printf("【worker-%d】run panic, err info: %v", w.id, panicErr)
+				w.pool.Logger.Printf("【worker-%d】panic error stack ==> %s", w.id, debug.Stack())
+				w.pool.Logger.Printf("【worker-%d】 recover worker...", w.id)
 				w.Run(wq)
 			}
 		}()
@@ -50,10 +50,9 @@ func (w *worker) Run(wq chan<- chan *JobWithArgs) {
 				func() { defer w.pool.sp.Put(job) }()
 				w.status = Busy
 				if err := job.fn(job.args...); err != nil {
+					w.pool.Logger.Printf("【worker-%d】run error, err info: %v", w.id, err)
 					if w.pool.onError != nil {
 						w.pool.onError(err)
-					} else {
-						w.pool.logger.Printf("【worker-%d】job error: %v", w.id, err)
 					}
 				}
 			case <-w.quit:
